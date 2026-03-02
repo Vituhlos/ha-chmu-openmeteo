@@ -3,6 +3,12 @@
 Všechny důležité změny v tomto projektu jsou popsány v tomto souboru.  
 All notable changes to this project are documented in this file.
 
+## [1.4.2] - 2026-03-02
+
+### Změněno / Changed
+- Aktualizován `codeowners` v `manifest.json` z `@lipelix` na `@Vituhlos`, aby HACS zobrazoval správného vlastníka / Updated `codeowners` in `manifest.json` from `@lipelix` to `@Vituhlos` so HACS shows the correct owner.
+- Verze integrace v manifestu navýšena na `1.4.2` / Integration manifest version bumped to `1.4.2`.
+
 ## [1.4.1] - 2026-03-02
 
 ### Opraveno / Fixed
