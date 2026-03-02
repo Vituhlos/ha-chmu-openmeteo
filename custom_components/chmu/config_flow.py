@@ -99,7 +99,7 @@ class ChmuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         suggested_station = None
         distance_km = None
 
-        if home_lat and home_lon and self._stations_with_coords:
+        if home_lat is not None and home_lon is not None and self._stations_with_coords:
             suggested_station = _find_nearest_station(
                 home_lat, home_lon, self._stations_with_coords
             )

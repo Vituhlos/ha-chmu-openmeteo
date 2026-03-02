@@ -1,6 +1,6 @@
 """Weather platform for ČHMÚ Weather integration."""
 
-import logging
+from typing import Any
 
 from homeassistant.components.weather import WeatherEntity, WeatherEntityFeature
 from homeassistant.const import UnitOfPressure, UnitOfSpeed, UnitOfTemperature
@@ -10,8 +10,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_STATION_ID, CONF_STATION_NAME, DOMAIN
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -39,6 +37,9 @@ class ChmuWeather(CoordinatorEntity, WeatherEntity):
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_native_pressure_unit = UnitOfPressure.HPA
     _attr_native_wind_speed_unit = UnitOfSpeed.METERS_PER_SECOND
+    _attr_supported_features = (
+        WeatherEntityFeature.FORECAST_HOURLY | WeatherEntityFeature.FORECAST_DAILY
+    )
 
     def __init__(self, coordinator, entry, station_id, station_name):
         """Initialize the weather entity."""
@@ -117,3 +118,13 @@ class ChmuWeather(CoordinatorEntity, WeatherEntity):
 
         # Cannot determine cloudy vs clear without cloud cover data
         return "cloudy"
+
+    async def async_forecast_hourly(self) -> list[dict[str, Any]] | None:
+        """Return hourly forecast from Open-Meteo for the selected station."""
+        forecast = self._get("forecast_hourly")
+        return forecast if isinstance(forecast, list) else None
+
+    async def async_forecast_daily(self) -> list[dict[str, Any]] | None:
+        """Return daily 7-day forecast from Open-Meteo for the selected station."""
+        forecast = self._get("forecast_daily")
+        return forecast if isinstance(forecast, list) else None

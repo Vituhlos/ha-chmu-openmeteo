@@ -1,7 +1,7 @@
 """API client for ČHMÚ Weather."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import requests
@@ -12,6 +12,8 @@ from .const import (
     API_NOW_PATH,
     API_RECENT_PATH,
     OPENMETEO_BASE_URL,
+    OPENMETEO_FORECAST_DAYS,
+    OPENMETEO_FORECAST_HOURS,
     WMO_CODE_TO_HA_CONDITION,
 )
 
@@ -154,6 +156,150 @@ def fetch_openmeteo_condition(latitude: float, longitude: float) -> Optional[str
         session.close()
 
 
+def _coerce_float(value: Any) -> Optional[float]:
+    """Convert value to float or return None."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_int(value: Any) -> Optional[int]:
+    """Convert value to int or return None."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_daily_datetime(date_str: str) -> Optional[str]:
+    """Convert YYYY-MM-DD string to RFC3339 UTC datetime."""
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        return date_obj.replace(tzinfo=timezone.utc).isoformat()
+    except ValueError:
+        return None
+
+
+def fetch_openmeteo_forecasts(latitude: float, longitude: float) -> Dict[str, list[Dict[str, Any]]]:
+    """Fetch Open-Meteo hourly and daily forecasts for HA weather entity."""
+    session = _create_session()
+    try:
+        url = (
+            f"{OPENMETEO_BASE_URL}"
+            f"?latitude={latitude}"
+            f"&longitude={longitude}"
+            f"&timezone=UTC"
+            f"&forecast_days={OPENMETEO_FORECAST_DAYS}"
+            f"&hourly=temperature_2m,relative_humidity_2m,pressure_msl,"
+            f"precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m"
+            f"&daily=weather_code,temperature_2m_max,temperature_2m_min,"
+            f"precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_direction_10m_dominant"
+        )
+        _LOGGER.debug("Fetching Open-Meteo forecasts from: %s", url)
+        response = session.get(url, timeout=20)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        _LOGGER.warning("Failed to fetch Open-Meteo forecasts", exc_info=True)
+        return {"forecast_hourly": [], "forecast_daily": []}
+    finally:
+        session.close()
+
+    now_utc = datetime.now(timezone.utc)
+    hourly = payload.get("hourly", {})
+    daily = payload.get("daily", {})
+
+    forecast_hourly: list[Dict[str, Any]] = []
+    hour_times = hourly.get("time", [])
+    for idx, dt_str in enumerate(hour_times):
+        try:
+            dt = datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+
+        if dt < now_utc:
+            continue
+
+        wmo_code = _coerce_int(hourly.get("weather_code", [None])[idx] if idx < len(hourly.get("weather_code", [])) else None)
+        item: Dict[str, Any] = {"datetime": dt.isoformat()}
+
+        condition = WMO_CODE_TO_HA_CONDITION.get(wmo_code) if wmo_code is not None else None
+        if condition is not None:
+            item["condition"] = condition
+
+        temperature = _coerce_float(hourly.get("temperature_2m", [None])[idx] if idx < len(hourly.get("temperature_2m", [])) else None)
+        humidity = _coerce_float(hourly.get("relative_humidity_2m", [None])[idx] if idx < len(hourly.get("relative_humidity_2m", [])) else None)
+        pressure = _coerce_float(hourly.get("pressure_msl", [None])[idx] if idx < len(hourly.get("pressure_msl", [])) else None)
+        precipitation = _coerce_float(hourly.get("precipitation", [None])[idx] if idx < len(hourly.get("precipitation", [])) else None)
+        precipitation_probability = _coerce_int(hourly.get("precipitation_probability", [None])[idx] if idx < len(hourly.get("precipitation_probability", [])) else None)
+        wind_speed = _coerce_float(hourly.get("wind_speed_10m", [None])[idx] if idx < len(hourly.get("wind_speed_10m", [])) else None)
+        wind_bearing = _coerce_float(hourly.get("wind_direction_10m", [None])[idx] if idx < len(hourly.get("wind_direction_10m", [])) else None)
+
+        if temperature is not None:
+            item["temperature"] = temperature
+        if humidity is not None:
+            item["humidity"] = humidity
+        if pressure is not None:
+            item["pressure"] = pressure
+        if precipitation is not None:
+            item["precipitation"] = precipitation
+        if precipitation_probability is not None:
+            item["precipitation_probability"] = precipitation_probability
+        if wind_speed is not None:
+            item["wind_speed"] = wind_speed
+        if wind_bearing is not None:
+            item["wind_bearing"] = wind_bearing
+
+        forecast_hourly.append(item)
+        if len(forecast_hourly) >= OPENMETEO_FORECAST_HOURS:
+            break
+
+    forecast_daily: list[Dict[str, Any]] = []
+    day_times = daily.get("time", [])
+    for idx, day_str in enumerate(day_times):
+        day_dt = _format_daily_datetime(day_str)
+        if day_dt is None:
+            continue
+
+        wmo_code = _coerce_int(daily.get("weather_code", [None])[idx] if idx < len(daily.get("weather_code", [])) else None)
+        item: Dict[str, Any] = {"datetime": day_dt}
+
+        condition = WMO_CODE_TO_HA_CONDITION.get(wmo_code) if wmo_code is not None else None
+        if condition is not None:
+            item["condition"] = condition
+
+        temp_max = _coerce_float(daily.get("temperature_2m_max", [None])[idx] if idx < len(daily.get("temperature_2m_max", [])) else None)
+        temp_min = _coerce_float(daily.get("temperature_2m_min", [None])[idx] if idx < len(daily.get("temperature_2m_min", [])) else None)
+        precipitation_sum = _coerce_float(daily.get("precipitation_sum", [None])[idx] if idx < len(daily.get("precipitation_sum", [])) else None)
+        precipitation_probability_max = _coerce_int(daily.get("precipitation_probability_max", [None])[idx] if idx < len(daily.get("precipitation_probability_max", [])) else None)
+        wind_speed_max = _coerce_float(daily.get("wind_speed_10m_max", [None])[idx] if idx < len(daily.get("wind_speed_10m_max", [])) else None)
+        wind_direction_dominant = _coerce_float(daily.get("wind_direction_10m_dominant", [None])[idx] if idx < len(daily.get("wind_direction_10m_dominant", [])) else None)
+
+        if temp_max is not None:
+            item["temperature"] = temp_max
+        if temp_min is not None:
+            item["templow"] = temp_min
+        if precipitation_sum is not None:
+            item["precipitation"] = precipitation_sum
+        if precipitation_probability_max is not None:
+            item["precipitation_probability"] = precipitation_probability_max
+        if wind_speed_max is not None:
+            item["wind_speed"] = wind_speed_max
+        if wind_direction_dominant is not None:
+            item["wind_bearing"] = wind_direction_dominant
+
+        forecast_daily.append(item)
+        if len(forecast_daily) >= OPENMETEO_FORECAST_DAYS:
+            break
+
+    return {"forecast_hourly": forecast_hourly, "forecast_daily": forecast_daily}
+
+
 class ChmuApi:
     """API client for ČHMÚ weather data."""
 
@@ -212,8 +358,13 @@ class ChmuApi:
         if self.latitude is not None and self.longitude is not None:
             condition = fetch_openmeteo_condition(self.latitude, self.longitude)
             data["condition"] = condition
+            forecasts = fetch_openmeteo_forecasts(self.latitude, self.longitude)
+            data["forecast_hourly"] = forecasts["forecast_hourly"]
+            data["forecast_daily"] = forecasts["forecast_daily"]
         else:
             data["condition"] = None
+            data["forecast_hourly"] = []
+            data["forecast_daily"] = []
 
         return data
 

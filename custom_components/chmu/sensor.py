@@ -177,7 +177,7 @@ class ChmuWindSpeedSensor(ChmuSensorBase):
 class ChmuWindDirectionSensor(ChmuSensorBase):
     """Wind direction sensor with corrected cardinal direction labels."""
 
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_state_class = SensorStateClass.MEASUREMENT_ANGLE
     _attr_native_unit_of_measurement = "°"
     _attr_translation_key = "wind_direction"
     _attr_icon = "mdi:compass"

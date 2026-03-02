@@ -1,36 +1,46 @@
-# ČHMÚ Weather – Home Assistant integrace
+# ČHMÚ Weather / CHMU Weather
 
-Integrace pro Home Assistant, která zobrazuje aktuální počasí z meteorologických stanic [ČHMÚ](https://opendata.chmi.cz) (Český hydrometeorologický ústav).
+## CZ
+Integrace pro Home Assistant, která zobrazuje aktuální měření z meteorologických stanic ČHMÚ a stav + předpověď počasí z Open-Meteo podle GPS souřadnic vybrané stanice.
 
-> **Tato integrace je fork** původní práce [@lipelix](https://github.com/lipelix/home-assistant-chmu-weather). Děkujeme za základ!
+### Funkce
+- Aktuální měření z ČHMÚ: teplota, vlhkost, tlak, srážky, rychlost a směr větru
+- Weather `condition` (sunny/cloudy/rainy/...) z Open-Meteo (WMO mapping)
+- Předpověď z Open-Meteo podle souřadnic stanice:
+  - hourly forecast (až 168 hodin)
+  - daily forecast (7 dní)
+- Automatický návrh nejbližší stanice podle polohy Home Assistantu
 
-## Co bylo upraveno oproti originálu
+### Instalace přes HACS
+1. HACS -> Custom repositories
+2. URL: `https://github.com/Vituhlos/ha-chmu-openmeteo`, kategorie `Integration`
+3. Nainstalovat a restartovat Home Assistant
+4. Nastavení -> Integrace -> Přidat -> `ČHMÚ Weather`
 
-- ⛅ **Stav počasí z [Open-Meteo](https://open-meteo.com)** — ikony sunny, cloudy, rainy, snowy... podle GPS polohy stanice (zdarma, bez API klíče)
-- 🧭 **Oprava kardinálních směrů větru** — správné meteorologické pořadí (S, SSV, SV, VSV, V...)
-- 🔧 **Oprava session lifecycle** — HTTP spojení se správně zavírá při unloadu integrace
-- ⚡ **Optimalizace config flow** — seznam stanic se načte jen jednou místo dvakrát
+### Zdroje dat
+- ČHMÚ Open Data: https://opendata.chmi.cz/meteorology/climate
+- Open-Meteo: https://open-meteo.com
 
-## Funkce
+## EN
+Home Assistant integration that provides current observations from CHMU meteorological stations and weather condition + forecast from Open-Meteo using GPS coordinates of the selected station.
 
-- 🌡️ Teplota, vlhkost, tlak
-- 🌧️ Srážky (10minutový součet)
-- 💨 Rychlost a směr větru (včetně kardinálního směru)
-- ⛅ Stav počasí z [Open-Meteo](https://open-meteo.com) podle GPS polohy stanice
-- 📍 Automatický návrh nejbližší stanice podle polohy HA
+### Features
+- Current CHMU measurements: temperature, humidity, pressure, precipitation, wind speed and wind direction
+- Weather `condition` (sunny/cloudy/rainy/...) from Open-Meteo (WMO mapping)
+- Open-Meteo forecast for station coordinates:
+  - hourly forecast (up to 168 hours)
+  - daily forecast (7 days)
+- Automatic nearest-station suggestion based on Home Assistant location
 
-## Instalace přes HACS
+### Installation via HACS
+1. HACS -> Custom repositories
+2. URL: `https://github.com/Vituhlos/ha-chmu-openmeteo`, category `Integration`
+3. Install and restart Home Assistant
+4. Settings -> Integrations -> Add -> `ČHMÚ Weather`
 
-1. HACS → ⋮ → **Custom repositories**
-2. URL: `https://github.com/Vituhlos/ha-chmu-openmeteo`, kategorie **Integration**
-3. Stáhnout a restartovat HA
-4. Nastavení → Integrace → Přidat → **ČHMÚ Weather**
+### Data Sources
+- CHMU Open Data: https://opendata.chmi.cz/meteorology/climate
+- Open-Meteo: https://open-meteo.com
 
-## Zdroje dat
-
-- Měření (teplota, vítr, srážky…): [ČHMÚ Open Data](https://opendata.chmi.cz/meteorology/climate)
-- Stav počasí (ikona): [Open-Meteo](https://open-meteo.com) – zdarma, bez API klíče
-
-## Kredity
-
-Původní integrace: [@lipelix](https://github.com/lipelix/home-assistant-chmu-weather)
+## Kredity / Credits
+Původní integrace / Original integration: https://github.com/lipelix/home-assistant-chmu-weather

@@ -4,10 +4,10 @@
   "codeowners": ["@lipelix"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/lipelix/home-assistant-chmu-weather",
+  "documentation": "https://github.com/Vituhlos/ha-chmu-openmeteo",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/lipelix/home-assistant-chmu-weather/issues",
+  "issue_tracker": "https://github.com/Vituhlos/ha-chmu-openmeteo/issues",
   "requirements": ["requests>=2.31.0"],
-  "version": "1.3.0"
+  "version": "1.4.0"
 }

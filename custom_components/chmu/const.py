@@ -15,6 +15,8 @@ API_RECENT_PATH = "/recent/data"
 
 # Open-Meteo API (free, no key required)
 OPENMETEO_BASE_URL = "https://api.open-meteo.com/v1/forecast"
+OPENMETEO_FORECAST_DAYS = 7
+OPENMETEO_FORECAST_HOURS = 168
 
 # WMO Weather Interpretation Codes → Home Assistant condition strings
 # https://open-meteo.com/en/docs#weathervariables
