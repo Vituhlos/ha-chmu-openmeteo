@@ -2,6 +2,15 @@
 
 Integrace pro Home Assistant, která zobrazuje aktuální počasí z meteorologických stanic [ČHMÚ](https://opendata.chmi.cz) (Český hydrometeorologický ústav).
 
+> **Tato integrace je fork** původní práce [@lipelix](https://github.com/lipelix/home-assistant-chmu-weather). Děkujeme za základ!
+
+## Co bylo upraveno oproti originálu
+
+- ⛅ **Stav počasí z [Open-Meteo](https://open-meteo.com)** — ikony sunny, cloudy, rainy, snowy... podle GPS polohy stanice (zdarma, bez API klíče)
+- 🧭 **Oprava kardinálních směrů větru** — správné meteorologické pořadí (S, SSV, SV, VSV, V...)
+- 🔧 **Oprava session lifecycle** — HTTP spojení se správně zavírá při unloadu integrace
+- ⚡ **Optimalizace config flow** — seznam stanic se načte jen jednou místo dvakrát
+
 ## Funkce
 
 - 🌡️ Teplota, vlhkost, tlak
@@ -13,7 +22,7 @@ Integrace pro Home Assistant, která zobrazuje aktuální počasí z meteorologi
 ## Instalace přes HACS
 
 1. HACS → ⋮ → **Custom repositories**
-2. URL tohoto repozitáře, kategorie **Integration**
+2. URL: `https://github.com/Vituhlos/ha-chmu-openmeteo`, kategorie **Integration**
 3. Stáhnout a restartovat HA
 4. Nastavení → Integrace → Přidat → **ČHMÚ Weather**
 
@@ -22,6 +31,6 @@ Integrace pro Home Assistant, která zobrazuje aktuální počasí z meteorologi
 - Měření (teplota, vítr, srážky…): [ČHMÚ Open Data](https://opendata.chmi.cz/meteorology/climate)
 - Stav počasí (ikona): [Open-Meteo](https://open-meteo.com) – zdarma, bez API klíče
 
-## Verze
+## Kredity
 
-`1.3.0` – Oprava kardinálních směrů větru, přidání Open-Meteo condition, oprava session lifecycle.
+Původní integrace: [@lipelix](https://github.com/lipelix/home-assistant-chmu-weather)
