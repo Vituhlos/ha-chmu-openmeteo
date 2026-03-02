@@ -135,18 +135,19 @@ def fetch_openmeteo_condition(latitude: float, longitude: float) -> Optional[str
             f"{OPENMETEO_BASE_URL}"
             f"?latitude={latitude}"
             f"&longitude={longitude}"
-            f"&current=weather_code"
+            f"&current=weather_code,is_day"
             f"&timezone=auto"
         )
         _LOGGER.debug("Fetching Open-Meteo condition from: %s", url)
         response = session.get(url, timeout=15)
         response.raise_for_status()
         data = response.json()
-        wmo_code = data.get("current", {}).get("weather_code")
+        wmo_code = _coerce_int(data.get("current", {}).get("weather_code"))
+        is_day = _coerce_int(data.get("current", {}).get("is_day"))
         if wmo_code is None:
             _LOGGER.warning("Open-Meteo response missing weather_code")
             return None
-        condition = WMO_CODE_TO_HA_CONDITION.get(int(wmo_code))
+        condition = _map_wmo_to_condition(wmo_code, is_day=is_day)
         _LOGGER.debug("Open-Meteo WMO code %s -> HA condition '%s'", wmo_code, condition)
         return condition
     except Exception:
@@ -176,6 +177,21 @@ def _coerce_int(value: Any) -> Optional[int]:
         return None
 
 
+def _map_wmo_to_condition(wmo_code: Optional[int], is_day: Optional[int] = None) -> Optional[str]:
+    """Map Open-Meteo WMO code to HA condition with day/night handling."""
+    if wmo_code is None:
+        return None
+
+    condition = WMO_CODE_TO_HA_CONDITION.get(wmo_code)
+    if condition is None:
+        return None
+
+    if condition == "sunny" and is_day == 0:
+        return "clear-night"
+
+    return condition
+
+
 def _format_daily_datetime(date_str: str) -> Optional[str]:
     """Convert YYYY-MM-DD string to RFC3339 UTC datetime."""
     try:
@@ -196,7 +212,7 @@ def fetch_openmeteo_forecasts(latitude: float, longitude: float) -> Dict[str, li
             f"&timezone=UTC"
             f"&forecast_days={OPENMETEO_FORECAST_DAYS}"
             f"&hourly=temperature_2m,relative_humidity_2m,pressure_msl,"
-            f"precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m"
+            f"precipitation,precipitation_probability,weather_code,is_day,wind_speed_10m,wind_direction_10m"
             f"&daily=weather_code,temperature_2m_max,temperature_2m_min,"
             f"precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_direction_10m_dominant"
         )
@@ -226,9 +242,10 @@ def fetch_openmeteo_forecasts(latitude: float, longitude: float) -> Dict[str, li
             continue
 
         wmo_code = _coerce_int(hourly.get("weather_code", [None])[idx] if idx < len(hourly.get("weather_code", [])) else None)
+        is_day = _coerce_int(hourly.get("is_day", [None])[idx] if idx < len(hourly.get("is_day", [])) else None)
         item: Dict[str, Any] = {"datetime": dt.isoformat()}
 
-        condition = WMO_CODE_TO_HA_CONDITION.get(wmo_code) if wmo_code is not None else None
+        condition = _map_wmo_to_condition(wmo_code, is_day=is_day)
         if condition is not None:
             item["condition"] = condition
 
@@ -269,7 +286,7 @@ def fetch_openmeteo_forecasts(latitude: float, longitude: float) -> Dict[str, li
         wmo_code = _coerce_int(daily.get("weather_code", [None])[idx] if idx < len(daily.get("weather_code", [])) else None)
         item: Dict[str, Any] = {"datetime": day_dt}
 
-        condition = WMO_CODE_TO_HA_CONDITION.get(wmo_code) if wmo_code is not None else None
+        condition = _map_wmo_to_condition(wmo_code)
         if condition is not None:
             item["condition"] = condition
 

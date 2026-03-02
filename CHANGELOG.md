@@ -3,6 +3,15 @@
 Všechny důležité změny v tomto projektu jsou popsány v tomto souboru.  
 All notable changes to this project are documented in this file.
 
+## [1.4.1] - 2026-03-02
+
+### Opraveno / Fixed
+- Opraveno mapování dne a noci pro Open-Meteo podmínky: při nočním čase se pro jasnou oblohu už nepoužívá `sunny`, ale `clear-night` / Fixed day/night mapping for Open-Meteo conditions: during night time, clear sky no longer uses `sunny` and now correctly uses `clear-night`.
+- Oprava je aplikovaná pro aktuální stav počasí i hodinovou předpověď / The fix is applied to both current weather condition and hourly forecast.
+
+### Změněno / Changed
+- Verze integrace v manifestu navýšena na `1.4.1` / Integration manifest version bumped to `1.4.1`.
+
 ## [1.4.0] - 2026-03-02
 
 ### Přidáno / Added
