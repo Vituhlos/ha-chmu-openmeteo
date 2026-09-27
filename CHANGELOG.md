@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-09-27
+
+### Added
+- Every 10 minute measurement is now kept, as hourly statistics. ČHMÚ measures
+  every 10 minutes but rewrites a station's file only once an hour, adding the
+  previous hour's six rows at once, and only the newest row can become a sensor
+  state - so five of every six measurements were downloaded and dropped, and
+  the history graph sat flat for an hour and then jumped.
+
+  Those rows are now folded into one row per hour carrying the real mean,
+  minimum and maximum, and imported as external statistics under
+  `chmu:{station}_{element}` for temperature, humidity, pressure, wind speed
+  and wind direction (circular mean). Add them to a Statistics graph card.
+  Precipitation is not included yet: whether a ČHMÚ 10 minute row is the
+  amount fallen in those 10 minutes or a running total is still unsettled.
+  Without a recorder the sensors work as before and only the statistics are
+  skipped, with a warning (#18).
+
 ## [1.7.3] - 2026-09-17
 
 ### Fixed
