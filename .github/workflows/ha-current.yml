@@ -1,0 +1,47 @@
+name: HA 2026.9 compatibility probe
+
+# An optional probe, not a declaration of the supported minimum. The original
+# CI continues to use the upstream's exact harness/Core baseline unchanged.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Real HA 2026.9.4 harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14.2'
+      - name: Prepare isolated dependency profile
+        env:
+          REQUIREMENTS_PATH: ${{ runner.temp }}/requirements-ha-current.txt
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          source = Path("requirements-dev.txt").read_text()
+          old = "pytest-homeassistant-custom-component==0.13.316"
+          new = "pytest-homeassistant-custom-component==0.13.367"
+          assert source.count(old) == 1, "Upstream harness pin changed; review this probe"
+          Path(os.environ["REQUIREMENTS_PATH"]).write_text(source.replace(old, new))
+          PY
+          python -m venv .venv
+          .venv/bin/python -m pip install -r "$REQUIREMENTS_PATH"
+      - name: Verify the exact test Core
+        run: |
+          .venv/bin/python - <<'PY'
+          from importlib.metadata import version
+
+          assert version("homeassistant") == "2026.9.4"
+          assert version("pytest-homeassistant-custom-component") == "0.13.367"
+          print("Core", version("homeassistant"))
+          PY
+      - name: Run all tests with the real harness
+        run: .venv/bin/python -m pytest -ra
