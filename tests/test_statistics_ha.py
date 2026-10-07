@@ -22,10 +22,13 @@ from homeassistant.components.recorder import Recorder, migration  # noqa: E402
 from homeassistant.components.recorder.statistics import (  # noqa: E402
     statistics_during_period,
 )
+from homeassistant.helpers import recorder as recorder_helper  # noqa: E402
+from pytest_homeassistant_custom_component import patch_recorder  # noqa: E402
 from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: E402
 from pytest_homeassistant_custom_component.components.recorder.common import (  # noqa: E402
     async_wait_recording_done,
 )
+from sqlalchemy.orm.session import Session  # noqa: E402
 
 from custom_components.chmu.const import DOMAIN  # noqa: E402
 
@@ -39,32 +42,34 @@ TEMPERATURES = [18.1, 17.8, 17.7, 17.1, 16.9, 17.0]
 
 @pytest.fixture(autouse=True)
 def recorder_autospec_compat(monkeypatch):
-    """Resolve the missing type only while these recorder tests run.
+    """Resolve known missing types only while these recorder tests run.
 
     Python 3.14 evaluates deferred annotations when the harness autospecs
-    _find_schema_errors, but Core imports Recorder only under TYPE_CHECKING.
-    Keep autospec and the real recorder; bind the exact class Core intended.
+    recorder callables. Core imports migration.Recorder and helpers.recorder.Session
+    only under TYPE_CHECKING; bind the exact classes from those imports.
+    Harness 0.13.367 saves the original session_scope as real_session_scope
+    before replacing the helper with an unannotated wrapper. Probe the original.
+    All ten recorder fixture autospec targets were checked on Python 3.14.2 /
+    Core 2026.9.4: six migration targets need Recorder, one needs Session.
+    Keep autospec and the real recorder. Unexpected missing names must fail.
     Remove when https://github.com/MatthewFlamm/pytest-homeassistant-custom-component/issues/256
     is fixed. The feature probe becomes a no-op once the signature works.
     """
-    if sys.version_info < (3, 14) or "Recorder" in vars(migration):
+    if sys.version_info < (3, 14):
         return
 
-    try:
-        inspect.signature(migration._find_schema_errors)
-    except NameError as err:
-        if err.name != "Recorder":
-            raise
-    else:
-        return
-
-    monkeypatch.setattr(migration, "Recorder", Recorder, raising=False)
-    assert (
-        inspect.signature(migration._find_schema_errors)
-        .parameters["instance"]
-        .annotation
-        is Recorder
+    expected_missing_types = (
+        (migration._find_schema_errors, migration, "Recorder", Recorder),
+        (patch_recorder.real_session_scope, recorder_helper, "Session", Session),
     )
+    for target, module, name, runtime_type in expected_missing_types:
+        try:
+            inspect.signature(target)
+        except NameError as err:
+            if err.name != name or name in vars(module):
+                raise
+            monkeypatch.setattr(module, name, runtime_type, raising=False)
+            inspect.signature(target)
 
 
 def _history(hour: datetime, values: list[float]) -> list[list]:
