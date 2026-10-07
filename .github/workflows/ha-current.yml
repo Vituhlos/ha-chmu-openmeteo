@@ -8,6 +8,7 @@ on:
     branches:
       - phase1/upstream-base
       - phase2/identity-capabilities
+      - phase3/measurement-robustness
 
 permissions:
   contents: read
