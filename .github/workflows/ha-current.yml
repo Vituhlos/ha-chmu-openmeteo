@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - phase1/upstream-base
+      - phase2/identity-capabilities
 
 permissions:
   contents: read
