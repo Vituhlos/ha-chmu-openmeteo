@@ -108,12 +108,22 @@ async def test_partial_observations_and_measured_at(
     await hass.async_block_till_done(wait_background_tasks=True)
     assert entry.runtime_data.coordinator.last_update_success
     state = sensor_state(hass, key)
-    assert state.attributes["measurement_state"] == expected
-    assert state.attributes["measured_at"] == datetime.fromisoformat(stamp).isoformat()
+    entity = hass.data["sensor"].get_entity(state.entity_id)
+    assert entity is not None
+    attributes = entity.extra_state_attributes
+    assert attributes is not None
+    assert attributes["measurement_state"] == expected
+    assert attributes["measured_at"] == stamp
+    if expected == "unusable":
+        # Core only publishes extra_state_attributes when an entity is available.
+        assert "measurement_state" not in state.attributes
+    else:
+        assert state.attributes["measurement_state"] == expected
+        assert state.attributes["measured_at"] == stamp
     assert (state.state == "unavailable") is (expected == "unusable")
     humidity = sensor_state(hass, "humidity")
     assert humidity.state not in ("unknown", "unavailable")
-    assert humidity.attributes["measured_at"] == "2026-10-07T11:50:00+00:00"
+    assert humidity.attributes["measured_at"] == "2026-10-07T11:50:00Z"
     assert humidity.attributes["quality"] == 5
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert len(sessions) == 2
@@ -131,7 +141,11 @@ async def test_missing_element_and_zero_are_per_element(hass, http):
     await hass.async_block_till_done(wait_background_tasks=True)
     assert entry.runtime_data.coordinator.last_update_success
     assert sensor_state(hass, "humidity").state == "unavailable"
-    assert sensor_state(hass, "humidity").attributes["measurement_state"] == "missing"
+    humidity = sensor_state(hass, "humidity")
+    entity = hass.data["sensor"].get_entity(humidity.entity_id)
+    assert entity is not None
+    assert entity.extra_state_attributes == {"measurement_state": "missing"}
+    assert "measurement_state" not in humidity.attributes
     assert float(sensor_state(hass, "precipitation").state) == 0
     assert float(sensor_state(hass, "wind_speed").state) == 0
     assert await hass.config_entries.async_unload(entry.entry_id)

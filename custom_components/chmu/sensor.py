@@ -116,7 +116,9 @@ class ChmuSensorBase(CoordinatorEntity, SensorEntity):
             if row is None:
                 return {"measurement_state": "missing"}
             return {
-                "measured_at": row.measured_at.isoformat() if row.measured_at else None,
+                "measured_at": row.measured_at.isoformat().replace("+00:00", "Z")
+                if row.measured_at
+                else None,
                 "measurement_state": row.state,
                 "quality": row.quality,
                 "flag": row.flag,
