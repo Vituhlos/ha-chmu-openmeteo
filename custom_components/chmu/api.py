@@ -68,9 +68,8 @@ def _utc_day_candidates() -> tuple[datetime, datetime]:
 def _parse_timestamp(value: Any) -> datetime | None:
     """Parse a ČHMÚ measurement timestamp into an aware datetime.
 
-    Returns None for anything unparseable rather than failing the poll: an
-    unexpected stamp format must not cost the reading itself, it only means
-    the age cannot be checked.
+    Return None for malformed or naive stamps. That element is unavailable;
+    other elements with verifiable source times can still keep the poll usable.
     """
     if not isinstance(value, str):
         return None
@@ -283,7 +282,6 @@ def get_stations_with_coords(
         }
     finally:
         session.close()
-
 
 
 class ChmuApi:
