@@ -4,6 +4,9 @@ name: HA 2026.9 compatibility probe
 # CI continues to use the upstream's exact harness/Core baseline unchanged.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - phase1/upstream-base
 
 permissions:
   contents: read
