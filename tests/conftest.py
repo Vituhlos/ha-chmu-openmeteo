@@ -29,6 +29,12 @@ class _ConfigEntry:
         return cls
 
 
+class _ConfigEntryState:
+    """State used by the isolated logic tests."""
+
+    LOADED = "loaded"
+
+
 class _Platform:
     """Stub for Platform."""
 
@@ -64,7 +70,10 @@ def _install_homeassistant_stub() -> None:
 
     for module_path, attrs in [
         ("homeassistant", {}),
-        ("homeassistant.config_entries", {"ConfigEntry": _ConfigEntry}),
+        (
+            "homeassistant.config_entries",
+            {"ConfigEntry": _ConfigEntry, "ConfigEntryState": _ConfigEntryState},
+        ),
         ("homeassistant.const", {"Platform": _Platform}),
         ("homeassistant.core", {"HomeAssistant": _HomeAssistant}),
         ("homeassistant.helpers", {}),
