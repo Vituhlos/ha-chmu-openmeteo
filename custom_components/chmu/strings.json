@@ -17,7 +17,8 @@
       "unknown": "Unexpected error occurred"
     },
     "abort": {
-      "already_configured": "This station is already configured"
+      "already_configured": "This station is already configured",
+      "invalid_station": "The station is not in the offered list."
     }
   },
   "entity": {

@@ -17,7 +17,8 @@
       "unknown": "Došlo k neočekávané chybě"
     },
     "abort": {
-      "already_configured": "Tato stanice je již nakonfigurována"
+      "already_configured": "Tato stanice je již nakonfigurována",
+      "invalid_station": "Stanice není v nabídnutém seznamu."
     }
   },
   "entity": {

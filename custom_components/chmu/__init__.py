@@ -3,8 +3,9 @@
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
+from functools import partial
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import (
@@ -12,8 +13,10 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .api import ChmuApi, MeasurementUnusable
+from .api import ChmuApi, MeasurementUnusable, get_stations_with_coords
+from .const import CONF_STATION_ELEMENTS, CONF_STATION_ID
 from .forecast import ChmuForecastApi, ForecastUnusable, StationForecast
+from .identity import canonical_station_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +49,57 @@ class ChmuRuntimeData:
 ChmuConfigEntry = ConfigEntry[ChmuRuntimeData]
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ChmuConfigEntry) -> bool:
+    """Advance the schema offline, preserving all stored and registry IDs."""
+    if entry.version != 1:
+        return False
+    if entry.minor_version < 2:
+        hass.config_entries.async_update_entry(
+            entry,
+            unique_id=entry.unique_id or entry.data[CONF_STATION_ID],
+            minor_version=2,
+        )
+    return True
+
+
+async def _async_enrich_capabilities(
+    hass: HomeAssistant, entry: ChmuConfigEntry
+) -> None:
+    """Retry missing metadata without making offline schema migration depend on it.
+
+    Preserve the legacy six-sensor fallback until authoritative metadata arrives.
+    A loaded entry is reloaded after enrichment so platforms apply capabilities;
+    entity registry records are deliberately retained, including old pressure.
+    """
+    if CONF_STATION_ELEMENTS in entry.data:
+        return
+    try:
+        stations = await hass.async_add_executor_job(
+            partial(get_stations_with_coords, allow_fallback=False)
+        )
+    except Exception:
+        _LOGGER.warning("Station capabilities unavailable for %s", entry.entry_id)
+        return
+    identity = canonical_station_id(entry.data[CONF_STATION_ID])
+    matches = [
+        info
+        for station_id, info in stations.items()
+        if canonical_station_id(station_id) == identity
+    ]
+    if len(matches) != 1 or not matches[0].get("elements"):
+        return
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_STATION_ELEMENTS: list(matches[0]["elements"])},
+    )
+    if entry.state is ConfigEntryState.LOADED:
+        # Do not await unload/reload from the coordinator that is being unloaded.
+        hass.async_create_task(
+            hass.config_entries.async_reload(entry.entry_id),
+            f"chmu capability reload {entry.entry_id}",
+        )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ChmuConfigEntry) -> bool:
     """Set up ČHMÚ Weather from a config entry."""
     station_id = entry.data["station_id"]
@@ -72,6 +126,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ChmuConfigEntry) -> bool
         becomes the sensor state, so the rest are handed to the recorder as
         hourly statistics on the way past (#18).
         """
+        await _async_enrich_capabilities(hass, entry)
         try:
             data = await hass.async_add_executor_job(api.get_current_data)
         except MeasurementUnusable as err:

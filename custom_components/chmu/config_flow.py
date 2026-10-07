@@ -1,6 +1,7 @@
 """Config flow for ČHMÚ Weather integration."""
 
 import logging
+from functools import partial
 from typing import Any
 
 import voluptuous as vol
@@ -14,6 +15,7 @@ from .const import (
     CONF_STATION_NAME,
     DOMAIN,
 )
+from .identity import canonical_station_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +104,10 @@ class ChmuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for ČHMÚ Weather."""
 
     VERSION = 1
+    MINOR_VERSION = 2
+
+    def __init__(self) -> None:
+        self._stations: dict[str, dict[str, Any]] | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -109,19 +115,34 @@ class ChmuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         errors = {}
 
-        if user_input is not None:
-            station_id = user_input[CONF_STATION_ID]
+        if self._stations is None:
+            try:
+                self._stations = await self.hass.async_add_executor_job(
+                    partial(get_stations_with_coords, allow_fallback=False)
+                )
+                if not self._stations:
+                    errors["base"] = "cannot_connect"
+                    self._stations = None
+            except Exception:
+                _LOGGER.exception("Failed to fetch stations")
+                errors["base"] = "cannot_connect"
 
-            # Fetch stations to get the name
-            stations_with_coords = await self.hass.async_add_executor_job(
-                get_stations_with_coords
-            )
-            station_info = stations_with_coords.get(station_id, {})
+        stations_with_coords = self._stations or {}
+        if user_input is not None and not errors:
+            station_id = user_input[CONF_STATION_ID]
+            if station_id not in stations_with_coords:
+                return self.async_abort(reason="invalid_station")
+            identity = canonical_station_id(station_id)
+            for entry in self._async_current_entries():
+                existing_id = entry.data.get(CONF_STATION_ID) or entry.unique_id
+                if existing_id and canonical_station_id(existing_id) == identity:
+                    return self.async_abort(reason="already_configured")
+            station_info = stations_with_coords[station_id]
             station_name = station_info.get("name", f"Station {station_id}")
             station_elements = station_info.get("elements", [])
 
             # Check if already configured
-            await self.async_set_unique_id(station_id)
+            await self.async_set_unique_id(identity)
             self._abort_if_unique_id_configured()
 
             return self.async_create_entry(
@@ -130,27 +151,17 @@ class ChmuConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_STATION_ID: station_id,
                     CONF_STATION_NAME: station_name,
                     CONF_STATION_ELEMENTS: station_elements,
+                    "station_latitude": station_info["latitude"],
+                    "station_longitude": station_info["longitude"],
                 },
             )
-
-        # Fetch available stations with coordinates
-        try:
-            stations_with_coords = await self.hass.async_add_executor_job(
-                get_stations_with_coords
-            )
-            if not stations_with_coords:
-                errors["base"] = "cannot_connect"
-        except Exception:
-            _LOGGER.exception("Failed to fetch stations")
-            errors["base"] = "cannot_connect"
-            stations_with_coords = {}
 
         # Get Home Assistant location to suggest nearest station
         home_lat = self.hass.config.latitude
         home_lon = self.hass.config.longitude
 
         suggested_station = None
-        if home_lat and home_lon and stations_with_coords:
+        if home_lat is not None and home_lon is not None and stations_with_coords:
             suggested_station = find_nearest_station(
                 home_lat, home_lon, stations_with_coords
             )

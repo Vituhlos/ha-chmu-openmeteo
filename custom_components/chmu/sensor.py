@@ -43,7 +43,7 @@ async def async_setup_entry(
     # precipitation only). Entries created before this was tracked have no
     # element list, so fall back to creating every sensor.
     supported = entry.data.get(CONF_STATION_ELEMENTS)
-    if not supported:
+    if supported is None:
         supported = list(SENSOR_TYPES)
 
     sensors = [

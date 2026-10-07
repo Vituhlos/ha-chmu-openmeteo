@@ -19,7 +19,6 @@ from .const import (
     METADATA_STATIONS_PREFIX,
     OBS_TYPE_10M,
     USER_AGENT,
-    WMO_WSI_PREFIX,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -104,16 +103,16 @@ def station_id_to_wsi(station_id: str) -> str:
     Professional WMO stations are stored as bare ids ("11450") for backwards
     compatibility, everything else already carries the full WSI.
     """
-    if "-" in station_id:
-        return station_id
-    return f"{WMO_WSI_PREFIX}{station_id}"
+    from .identity import canonical_station_id
+
+    return canonical_station_id(station_id)
 
 
 def wsi_to_station_id(wsi: str) -> str:
     """Convert a WSI to the station id stored in the config entry."""
-    if wsi.startswith(WMO_WSI_PREFIX):
-        return wsi[len(WMO_WSI_PREFIX) :]
-    return wsi
+    from .identity import discovery_station_id
+
+    return discovery_station_id(wsi)
 
 
 def new_session() -> requests.Session:
@@ -208,7 +207,9 @@ def get_stations() -> dict[str, str]:
     }
 
 
-def get_stations_with_coords() -> dict[str, dict[str, Any]]:
+def get_stations_with_coords(
+    *, allow_fallback: bool = True
+) -> dict[str, dict[str, Any]]:
     """Fetch available stations with coordinates from ČHMÚ metadata.
 
     Includes both professional WMO stations ("0-20000-0-...") and automatic
@@ -263,6 +264,9 @@ def get_stations_with_coords() -> dict[str, dict[str, Any]]:
         _LOGGER.info("Found %d stations with coordinates", len(stations))
         return stations
     except Exception:
+        if not allow_fallback:
+            # Approximate fallback stations are not authoritative capabilities.
+            raise
         _LOGGER.exception("Failed to fetch stations with coordinates")
         # Fallback to a basic set with approximate coordinates
         return {
