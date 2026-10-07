@@ -106,7 +106,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ChmuConfigEntry) -> bool
     station_name = entry.data.get("station_name", f"Station {station_id}")
 
     api = ChmuApi(station_id, station_name)
+    entry.async_on_unload(api.close)
     forecast_api = ChmuForecastApi(station_id)
+    # Forecast requests run separately; ownership cleanup does not change fetching.
+    entry.async_on_unload(forecast_api.session.close)
 
     # Imported here rather than at module level because it pulls in the
     # recorder, and the test suite imports this package against a small Home

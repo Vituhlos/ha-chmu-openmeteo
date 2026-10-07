@@ -281,6 +281,8 @@ def get_stations_with_coords(
         return {
             station_id: dict(info) for station_id, info in _FALLBACK_STATIONS.items()
         }
+    finally:
+        session.close()
 
 
 
@@ -293,6 +295,13 @@ class ChmuApi:
         self.wsi = station_id_to_wsi(station_id)
         self.station_name = station_name or f"Station {station_id}"
         self.session = new_session()
+        self._closed = False
+
+    def close(self) -> None:
+        """Close the entry-owned measurement/text HTTP session exactly once."""
+        if not self._closed:
+            self.session.close()
+            self._closed = True
 
     def get_current_data(self) -> dict[str, Any]:
         """Get current weather data from ČHMÚ."""
