@@ -6,6 +6,8 @@ is shaped the way the recorder accepts, that the rows survive the import queue,
 and that re-offering an hour rewrites it instead of duplicating it.
 """
 
+import inspect
+import sys
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -16,6 +18,7 @@ pytest.importorskip(
     reason="Home Assistant is not installed",
 )
 
+from homeassistant.components.recorder import Recorder, migration  # noqa: E402
 from homeassistant.components.recorder.statistics import (  # noqa: E402
     statistics_during_period,
 )
@@ -32,6 +35,36 @@ SECOND_HOUR = FIRST_HOUR + timedelta(hours=1)
 # The batch from issue #18: six rows published at once, of which the sensor
 # keeps only 17.0.
 TEMPERATURES = [18.1, 17.8, 17.7, 17.1, 16.9, 17.0]
+
+
+@pytest.fixture(autouse=True)
+def recorder_autospec_compat(monkeypatch):
+    """Resolve the missing type only while these recorder tests run.
+
+    Python 3.14 evaluates deferred annotations when the harness autospecs
+    _find_schema_errors, but Core imports Recorder only under TYPE_CHECKING.
+    Keep autospec and the real recorder; bind the exact class Core intended.
+    Remove when https://github.com/MatthewFlamm/pytest-homeassistant-custom-component/issues/256
+    is fixed. The feature probe becomes a no-op once the signature works.
+    """
+    if sys.version_info < (3, 14) or "Recorder" in vars(migration):
+        return
+
+    try:
+        inspect.signature(migration._find_schema_errors)
+    except NameError as err:
+        if err.name != "Recorder":
+            raise
+    else:
+        return
+
+    monkeypatch.setattr(migration, "Recorder", Recorder, raising=False)
+    assert (
+        inspect.signature(migration._find_schema_errors)
+        .parameters["instance"]
+        .annotation
+        is Recorder
+    )
 
 
 def _history(hour: datetime, values: list[float]) -> list[list]:
