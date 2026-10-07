@@ -3,6 +3,7 @@
 import logging
 import re
 from datetime import UTC, datetime, timedelta
+from math import isfinite
 from typing import Any
 
 import requests
@@ -13,13 +14,12 @@ from .const import (
     API_METADATA_PATH,
     API_NOW_PATH,
     ELEMENT_MAP,
-    MEASUREMENT_STALE_AFTER,
-    MEASUREMENT_UNUSABLE_AFTER,
     METADATA_ELEMENTS_PREFIX,
     METADATA_STATIONS_PREFIX,
     OBS_TYPE_10M,
     USER_AGENT,
 )
+from .measurement import MeasurementValue
 
 _LOGGER = logging.getLogger(__name__)
 _CR_TEXT_FORECAST_RE = re.compile(
@@ -45,6 +45,15 @@ class MeasurementUnusable(Exception):
     """
 
 
+class MeasurementUnavailable(MeasurementUnusable, ValueError):
+    """Both source dates are missing/empty, rather than a transport failure."""
+
+
+def utcnow() -> datetime:
+    """Single clock provider for source filenames and measurement freshness."""
+    return datetime.now(UTC)
+
+
 def _utc_day_candidates() -> tuple[datetime, datetime]:
     """Return the current and previous UTC day, in the order to try them.
 
@@ -52,7 +61,7 @@ def _utc_day_candidates() -> tuple[datetime, datetime]:
     the measurement path need that pair, and they used to derive it
     separately - which is how they came to disagree in the first place (#5).
     """
-    now = datetime.now(UTC)
+    now = utcnow()
     return now, now - timedelta(days=1)
 
 
@@ -71,7 +80,7 @@ def _parse_timestamp(value: Any) -> datetime | None:
     except ValueError:
         return None
 
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC) if parsed.tzinfo is not None else None
 
 
 # Fallback used when the station metadata cannot be downloaded.
@@ -147,7 +156,7 @@ def _fetch_metadata_with_fallback(
         response.raise_for_status()
         return response.json()
     except requests.exceptions.HTTPError as err:
-        if err.response.status_code == 404:
+        if err.response is not None and err.response.status_code == 404:
             # Try previous day's metadata
             date_str = previous_day.strftime("%Y%m%d")
             filename = f"{prefix}-{date_str}.json"
@@ -274,6 +283,7 @@ def get_stations_with_coords(
         }
 
 
+
 class ChmuApi:
     """API client for ČHMÚ weather data."""
 
@@ -337,38 +347,43 @@ class ChmuApi:
                 )
 
         if not data:
-            raise ValueError(f"No data available for station {self.station_id}")
+            raise MeasurementUnavailable(
+                f"No data available for station {self.station_id}"
+            )
 
         self._check_freshness(data, now)
         return data
 
     def _check_freshness(self, data: dict[str, Any], now: datetime) -> None:
-        """Warn about an ageing measurement, refuse an unusable one.
-
-        A sensor state carries no age of its own - Home Assistant stamps it
-        with the time it was written - so an unbounded reading would enter long
-        term statistics as if it had just been measured.
-        """
-        measured_at = _parse_timestamp(data.get("timestamp"))
-        if measured_at is None:
+        """Each element ages independently; one usable row is enough for setup."""
+        measurements = data.get("measurements")
+        if measurements is None:
+            # Compatibility for existing scalar-only callers/test doubles.
             return
-
-        age = now - measured_at
-        if age > MEASUREMENT_UNUSABLE_AFTER:
+        for key, row in list(measurements.items()):
+            row = measurements[key] = row.at(now)
+            data[key] = row.value if row.usable else None
+            if row.state == "stale":
+                _LOGGER.warning(
+                    "ČHMÚ %s for station %s is %d hours old (%s)",
+                    key,
+                    self.station_id,
+                    (now - row.measured_at) // timedelta(hours=1),
+                    row.measured_at,
+                )
+        usable = [row for row in measurements.values() if row.usable]
+        if not usable:
+            dated = [
+                row.measured_at for row in measurements.values() if row.measured_at
+            ]
+            age = (now - max(dated)) // timedelta(hours=1) if dated else None
             raise MeasurementUnusable(
-                f"the newest measurement for station {self.station_id} is from "
-                f"{measured_at:%Y-%m-%d %H:%MZ}, "
-                f"{age // timedelta(hours=1)} hours old"
+                f"No usable measurements for station {self.station_id}; "
+                f"newest row {age} hours old"
             )
-
-        if age > MEASUREMENT_STALE_AFTER:
-            _LOGGER.warning(
-                "The newest ČHMÚ measurement for station %s is %d hours old "
-                "(%s); the station may have stopped reporting",
-                self.station_id,
-                age // timedelta(hours=1),
-                data["timestamp"],
-            )
+        data["timestamp"] = (
+            max(row.measured_at for row in usable).isoformat().replace("+00:00", "Z")
+        )
 
     def _fetch_10min_data(self, date: datetime) -> dict[str, Any] | None:
         """Fetch 10-minute interval data for one UTC date.
@@ -380,7 +395,9 @@ class ChmuApi:
         """
         # Format: 10m-{WSI}-{YYYYMMDD}.json, named after the UTC day - the
         # measurement timestamps it holds are UTC as well.
-        date_str = date.strftime("%Y%m%d")
+        if date.tzinfo is None:
+            raise ValueError("Source file date must be timezone-aware")
+        date_str = date.astimezone(UTC).strftime("%Y%m%d")
         filename = f"10m-{self.wsi}-{date_str}.json"
         url = f"{API_BASE_URL}{API_NOW_PATH}/{filename}"
 
@@ -391,7 +408,7 @@ class ChmuApi:
             response.raise_for_status()
             return self._parse_chmu_data(response.json())
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
+            if e.response is not None and e.response.status_code == 404:
                 _LOGGER.debug("Data file not found: %s", filename)
                 return None
             raise
@@ -421,6 +438,8 @@ class ChmuApi:
             )
 
         values = payload["values"]
+        if not isinstance(values, list):
+            raise ValueError("Unexpected ČHMÚ values: expected an array")
         if not values:
             raise NoStationData("the file carries no measurement rows")
 
@@ -428,69 +447,62 @@ class ChmuApi:
         # batch as history: ČHMÚ publishes an hour's six measurements at once,
         # so the five older ones are just as real as the newest and would
         # otherwise be downloaded and dropped (#18).
-        latest_values = {}
+        latest: dict[str, MeasurementValue] = {}
         history: dict[str, list[list[Any]]] = {}
         for row in values:
-            if len(row) < 4:
+            if not isinstance(row, list) or len(row) < 4:
                 continue
-
-            station_id = row[0]
-            element = row[1]
-            timestamp = row[2]
-            value = row[3]
-
-            # Only process our station's data
-            if station_id != self.wsi:
+            if row[0] != self.wsi:
                 continue
-
-            key = ELEMENT_MAP.get(element)
-            if key is not None:
-                history.setdefault(key, []).append([timestamp, value])
-
-            # Keep only the latest value for each element
-            if (
-                element not in latest_values
-                or timestamp > latest_values[element]["timestamp"]
+            key = ELEMENT_MAP.get(row[1])
+            if key is None:
+                continue
+            timestamp = _parse_timestamp(row[2])
+            raw = row[3]
+            value = (
+                float(raw)
+                if isinstance(raw, (float, int))
+                and not isinstance(raw, bool)
+                and isfinite(raw)
+                else None
+            )
+            measurement = MeasurementValue(
+                value,
+                timestamp,
+                row[5] if len(row) > 5 else None,
+                row[4] if len(row) > 4 else None,
+            )
+            previous = latest.get(key)
+            if previous is None or (
+                timestamp is not None
+                and (previous.measured_at is None or timestamp >= previous.measured_at)
             ):
-                latest_values[element] = {"value": value, "timestamp": timestamp}
-
-        if not latest_values:
+                latest[key] = measurement
+            if (
+                timestamp is not None
+                and value is not None
+                and timestamp <= utcnow()
+                and measurement.quality not in (2, 4)
+            ):
+                history.setdefault(key, []).append(
+                    [timestamp.isoformat().replace("+00:00", "Z"), value]
+                )
+        if not latest:
             raise NoStationData(f"no rows for station {self.station_id}")
-
-        # Map CHMU elements to our sensor values. Elements the station does not
-        # measure are left out entirely instead of being reported as None.
-        result: dict[str, Any] = {
-            key: latest_values[element]["value"]
-            for element, key in ELEMENT_MAP.items()
-            if element in latest_values
-        }
-
+        # Keep scalar/history consumers compatible; availability is in measurements.
+        result: dict[str, Any] = {key: row.value for key, row in latest.items()}
+        result["measurements"] = latest
         result["station_name"] = self.station_name
-        result["timestamp"] = self._latest_timestamp(latest_values)
-        # Rows arrive grouped by element and ordered in practice, but nothing
-        # published says they must be, and the hourly aggregation reads them as
-        # a series.
+        dated = [
+            row.measured_at for row in latest.values() if row.measured_at is not None
+        ]
+        result["timestamp"] = (
+            max(dated).isoformat().replace("+00:00", "Z") if dated else None
+        )
         result["history"] = {
             key: sorted(rows, key=lambda row: row[0]) for key, rows in history.items()
         }
-
-        # History is logged as a count: a whole day of rows for six elements is
-        # hundreds of entries and would bury every other debug line.
-        _LOGGER.debug(
-            "Parsed data: %s (history: %s)",
-            {key: value for key, value in result.items() if key != "history"},
-            {key: len(rows) for key, rows in result["history"].items()},
-        )
         return result
-
-    @staticmethod
-    def _latest_timestamp(latest_values: dict[str, dict[str, Any]]) -> str:
-        """Return the newest measurement timestamp, preferring temperature."""
-        if "T" in latest_values:
-            return latest_values["T"]["timestamp"]
-
-        timestamps = [entry["timestamp"] for entry in latest_values.values()]
-        return max(timestamps) if timestamps else datetime.now(UTC).isoformat()
 
     def _fetch_latest_cr_text_forecast(self) -> dict[str, Any]:
         """Fetch latest Czech Republic text forecast JSON."""

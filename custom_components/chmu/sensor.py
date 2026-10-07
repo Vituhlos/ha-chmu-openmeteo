@@ -24,6 +24,7 @@ from .const import (
     CONF_STATION_ID,
     CONF_STATION_NAME,
     DOMAIN,
+    ELEMENT_MAP,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -82,6 +83,19 @@ class ChmuSensorBase(CoordinatorEntity, SensorEntity):
         }
 
     @property
+    def available(self) -> bool:
+        """A failed poll affects all sensors; a bad element affects only itself."""
+        if not super().available:
+            return False
+        if self._attr_translation_key not in ELEMENT_MAP.values():
+            return True  # the national text forecast has its own source
+        observations = (self.coordinator.data or {}).get("measurements")
+        if observations is None:
+            return True  # compatibility with scalar-only coordinator callers
+        row = observations.get(self._attr_translation_key)
+        return row is not None and row.usable
+
+    @property
     def extra_state_attributes(self):
         """Expose when the value was measured, not when it was written.
 
@@ -93,6 +107,20 @@ class ChmuSensorBase(CoordinatorEntity, SensorEntity):
         if not self.coordinator.data:
             return None
 
+        observations = self.coordinator.data.get("measurements")
+        if (
+            observations is not None
+            and self._attr_translation_key in ELEMENT_MAP.values()
+        ):
+            row = observations.get(self._attr_translation_key)
+            if row is None:
+                return {"measurement_state": "missing"}
+            return {
+                "measured_at": row.measured_at.isoformat() if row.measured_at else None,
+                "measurement_state": row.state,
+                "quality": row.quality,
+                "flag": row.flag,
+            }
         measured_at = self.coordinator.data.get("timestamp")
         return {"measured_at": measured_at} if measured_at else None
 
